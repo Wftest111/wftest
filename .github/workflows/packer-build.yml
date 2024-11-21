@@ -51,13 +51,17 @@ jobs:
           PACKER_LOG: 1
         run: |
           packer init .
+          # Clean and format AMI users string: remove spaces and create JSON array
+          AMI_USERS_JSON=$(echo "${{secrets.AMI_USERS}}" | sed 's/ //g' | awk -F',' '{print "[\"" $1 "\",\"" $2 "\"]"}')
+          echo "Formatted AMI Users: $AMI_USERS_JSON"
+  
           packer validate -var="aws_region=${{secrets.AWS_REGION}}" \
             -var="subnet_id=${{secrets.SUBNET_ID}}" \
-            -var="ami_users=${{secrets.AMI_USERS}}" \
+            -var="ami_users=$AMI_USERS_JSON" \
             .
           packer build -var="aws_region=${{secrets.AWS_REGION}}" \
             -var="subnet_id=${{secrets.SUBNET_ID}}" \
-            -var="ami_users=${{secrets.AMI_USERS}}" \
+            -var="ami_users=$AMI_USERS_JSON" \
             .
         id: packer_build
 
