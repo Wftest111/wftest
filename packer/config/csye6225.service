@@ -1,0 +1,28 @@
+[Unit]
+Description=CSYE6225 Spring Boot Application
+After=network.target
+ConditionPathExists=/opt/csye6225/webapp.jar
+ConditionPathExists=/etc/csye6225/application-env
+ConditionPathExists=/opt/csye6225/application.properties
+
+[Service]
+User=csye6225
+Group=csye6225
+Type=simple
+EnvironmentFile=/etc/csye6225/application-env
+WorkingDirectory=/opt/csye6225
+ExecStartPre=/bin/mkdir -p /var/log/webapp
+ExecStartPre=/bin/chown csye6225:csye6225 /var/log/webapp
+ExecStart=/usr/bin/java \
+    -Dspring.config.location=file:/opt/csye6225/application.properties \
+    -jar /opt/csye6225/webapp.jar
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/webapp/application.log
+StandardError=append:/var/log/webapp/application.log
+SuccessExitStatus=143
+TimeoutStopSec=10
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

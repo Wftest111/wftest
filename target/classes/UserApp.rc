@@ -1,0 +1,15 @@
+spring.application.name=UserApp
+
+
+spring.datasource.driver-class-name= org.postgresql.Driver
+spring.datasource.url=jdbc:postgresql://localhost:5432/UserApp
+spring.datasource.username=postgres
+spring.datasource.password=csye6225_password
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.properties.hibernate.dialect = org.hibernate.dialect.PostgreSQLDialect
+spring.datasource.hikari.connection-timeout=5000
+
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+
+logging.level.org.springframework.security=DEBUG

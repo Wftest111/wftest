@@ -1,0 +1,42 @@
+name: Packer Template Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Dummy JAR File
+        run: |
+          mkdir -p target
+          cd target
+          echo "This is a dummy JAR file." > demo-0.0.1-SNAPSHOT.jar
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: "1.9.4"
+
+      - name: Initialize Packer Plugins
+        id: init
+        run: |
+          cd packer
+          packer init .
+          packer plugins installed
+
+      - name: Check Packer Format
+        id: fmt
+        run: |
+          cd packer
+          packer fmt -check .
+    #validating
+      - name: Validate Packer Template
+        id: validate
+        run: |
+          cd packer
+          packer validate .
