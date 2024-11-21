@@ -16,4 +16,4 @@ Installation:
 3. Open Project in IntelliJ 
 4. Update the database connection details in application.properties or application.yml to match your database configuration.
 5. Run Webapp
-readme change test
+readme change tests
