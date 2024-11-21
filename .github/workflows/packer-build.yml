@@ -15,21 +15,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      # Configure AWS credentials for Dev account
+      - name: Configure AWS Dev credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
           aws-region: us-east-1
 
       - name: Install Packer
         uses: hashicorp/setup-packer@v2
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
           java-version: "17"
-          distribution: "adopt"
+          distribution: "temurin"
 
       - name: Build with Maven
         env:
@@ -54,7 +55,138 @@ jobs:
             -var="subnet_id=${{ secrets.SUBNET_ID }}" \
             -var='ami_users=["${{ secrets.AMI_USERS }}"]' \
             .
-#this is the verify command.
+        id: packer_build
+
+      # Extract AMI ID from Packer output
+      - name: Extract AMI ID
+        id: extract_ami
+        run: |
+          AMI_ID=$(aws ec2 describe-images --filters "Name=name,Values=csye6225-*" --query 'sort_by(Images, &CreationDate)[-1].ImageId' --output text)
+          if [ -z "$AMI_ID" ]; then
+            echo "No AMI found matching the pattern csye6225-*"
+            exit 1
+          fi
+          echo "ami_id=${AMI_ID}" >> $GITHUB_OUTPUT
+
+      # Update Launch Template for Dev Account
+      - name: Update Launch Template Dev
+        run: |
+          TEMPLATE_ID=$(aws ec2 describe-launch-templates --filters "Name=tag:Name,Values=csye6225_asg" --query 'LaunchTemplates[0].LaunchTemplateId' --output text)
+          aws ec2 create-launch-template-version \
+            --launch-template-id $TEMPLATE_ID \
+            --version-description "Auto-created version with new AMI" \
+            --source-version '$Latest' \
+            --launch-template-data "{\"ImageId\":\"${{ steps.extract_ami.outputs.ami_id }}\"}"
+          
+          aws ec2 modify-launch-template \
+            --launch-template-id $TEMPLATE_ID \
+            --default-version '$Latest'
+
+      # Start Instance Refresh for Dev Account
+      - name: Start Instance Refresh Dev
+        id: refresh_dev
+        run: |
+          ASG_NAME=$(aws autoscaling describe-auto-scaling-groups --query 'AutoScalingGroups[?contains(Tags[?Key==`Name`].Value, `webapp-asg`)].[AutoScalingGroupName]' --output text)
+          REFRESH_ID=$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name $ASG_NAME \
+            --preferences '{"MinHealthyPercentage": 90, "InstanceWarmup": 300}' \
+            --query 'InstanceRefreshId' --output text)
+          echo "refresh_id=${REFRESH_ID}" >> $GITHUB_OUTPUT
+          echo "asg_name=${ASG_NAME}" >> $GITHUB_OUTPUT
+
+      # Wait for Instance Refresh to Complete in Dev
+      - name: Wait for Instance Refresh Dev
+        run: |
+          TIMEOUT=1800  # 30 minutes timeout
+          START_TIME=$(date +%s)
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED_TIME=$((CURRENT_TIME - START_TIME))
+            if [ $ELAPSED_TIME -gt $TIMEOUT ]; then
+              echo "Timeout waiting for instance refresh after 30 minutes"
+              exit 1
+            fi
+            STATUS=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name ${{ steps.refresh_dev.outputs.asg_name }} \
+              --instance-refresh-ids ${{ steps.refresh_dev.outputs.refresh_id }} \
+              --query 'InstanceRefreshes[0].Status' --output text)
+          
+            if [ "$STATUS" = "Successful" ]; then
+              echo "Instance refresh completed successfully"
+              break
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+              echo "Instance refresh failed or was cancelled"
+              exit 1
+            fi
+          
+            echo "Instance refresh status: $STATUS"
+            sleep 30
+          done
+
+      # Configure AWS credentials for Demo account
+      - name: Configure AWS Demo credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEMO }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEMO }}
+          aws-region: us-east-1
+          role-duration-seconds: 3600
+
+      # Update Launch Template for Demo Account
+      - name: Update Launch Template Demo
+        run: |
+          TEMPLATE_ID=$(aws ec2 describe-launch-templates --filters "Name=tag:Name,Values=csye6225_asg" --query 'LaunchTemplates[0].LaunchTemplateId' --output text)
+          aws ec2 create-launch-template-version \
+            --launch-template-id $TEMPLATE_ID \
+            --version-description "Auto-created version with new AMI" \
+            --source-version '$Latest' \
+            --launch-template-data "{\"ImageId\":\"${{ steps.extract_ami.outputs.ami_id }}\"}"
+          
+          aws ec2 modify-launch-template \
+            --launch-template-id $TEMPLATE_ID \
+            --default-version '$Latest'
+
+      # Start Instance Refresh for Demo Account
+      - name: Start Instance Refresh Demo
+        id: refresh_demo
+        run: |
+          ASG_NAME=$(aws autoscaling describe-auto-scaling-groups --query 'AutoScalingGroups[?contains(Tags[?Key==`Name`].Value, `webapp-asg`)].[AutoScalingGroupName]' --output text)
+          REFRESH_ID=$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name $ASG_NAME \
+            --preferences '{"MinHealthyPercentage": 90, "InstanceWarmup": 300}' \
+            --query 'InstanceRefreshId' --output text)
+          echo "refresh_id=${REFRESH_ID}" >> $GITHUB_OUTPUT
+          echo "asg_name=${ASG_NAME}" >> $GITHUB_OUTPUT
+
+      # Wait for Instance Refresh to Complete in Demo
+      - name: Wait for Instance Refresh Demo
+        run: |
+          TIMEOUT=1800  # 30 minutes timeout
+          START_TIME=$(date +%s)
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED_TIME=$((CURRENT_TIME - START_TIME))
+            if [ $ELAPSED_TIME -gt $TIMEOUT ]; then
+              echo "Timeout waiting for instance refresh after 30 minutes"
+              exit 1
+            fi
+            STATUS=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name ${{ steps.refresh_demo.outputs.asg_name }} \
+              --instance-refresh-ids ${{ steps.refresh_demo.outputs.refresh_id }} \
+              --query 'InstanceRefreshes[0].Status' --output text)
+          
+            if [ "$STATUS" = "Successful" ]; then
+              echo "Instance refresh completed successfully"
+              break
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+              echo "Instance refresh failed or was cancelled"
+              exit 1
+            fi
+          
+            echo "Instance refresh status: $STATUS"
+            sleep 30
+          done
+
       - name: Verify Build Status
         if: success()
-        run: echo "Packer build completed successfully"
+        run: echo "Deployment completed successfully for both Dev and Demo environments"
