@@ -7,10 +7,6 @@ on:
     branches:
       - main
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   buildpacker:
     if: github.event.pull_request.merged == true
@@ -23,8 +19,8 @@ jobs:
       - name: Configure AWS Dev credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
-          aws-access-key-id: ${{secrets.AWS_ACCESS_KEY_ID_DEV}}
-          aws-secret-access-key: ${{secrets.AWS_SECRET_ACCESS_KEY_DEV}}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
           aws-region: us-east-1
 
       - name: Install Packer
@@ -38,8 +34,8 @@ jobs:
 
       - name: Build with Maven
         env:
-          DB_USERNAME: ${{secrets.DB_USERNAME}}
-          DB_PASSWORD: ${{secrets.DB_PASSWORD}}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: mvn clean install -DskipTests
 
       - name: Run tests
@@ -51,13 +47,17 @@ jobs:
           PACKER_LOG: 1
         run: |
           packer init .
+          # Clean and format AMI users string: remove spaces and create JSON array
+          AMI_USERS_JSON=$(echo "${{secrets.AMI_USERS}}" | sed 's/ //g' | awk -F',' '{print "[\"" $1 "\",\"" $2 "\"]"}')
+          echo "Formatted AMI Users: $AMI_USERS_JSON"
+
           packer validate -var="aws_region=${{secrets.AWS_REGION}}" \
             -var="subnet_id=${{secrets.SUBNET_ID}}" \
-            -var='ami_users=["${{secrets.AMI_USERS}}"]' \
+            -var="ami_users=$AMI_USERS_JSON" \
             .
           packer build -var="aws_region=${{secrets.AWS_REGION}}" \
             -var="subnet_id=${{secrets.SUBNET_ID}}" \
-            -var='ami_users=["${{secrets.AMI_USERS}}"]' \
+            -var="ami_users=$AMI_USERS_JSON" \
             .
         id: packer_build
 
@@ -80,7 +80,7 @@ jobs:
             --launch-template-id $TEMPLATE_ID \
             --version-description "Auto-created version with new AMI" \
             --source-version '$Latest' \
-            --launch-template-data "{\"ImageId\":\"${{steps.extract_ami.outputs.ami_id}}\"}"
+            --launch-template-data "{\"ImageId\":\"${{ steps.extract_ami.outputs.ami_id }}\"}"
           
           aws ec2 modify-launch-template \
             --launch-template-id $TEMPLATE_ID \
@@ -111,10 +111,10 @@ jobs:
               exit 1
             fi
             STATUS=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name ${{steps.refresh_dev.outputs.asg_name}} \
-              --instance-refresh-ids ${{steps.refresh_dev.outputs.refresh_id}} \
+              --auto-scaling-group-name ${{ steps.refresh_dev.outputs.asg_name }} \
+              --instance-refresh-ids ${{ steps.refresh_dev.outputs.refresh_id }} \
               --query 'InstanceRefreshes[0].Status' --output text)
-            
+          
             if [ "$STATUS" = "Successful" ]; then
               echo "Instance refresh completed successfully"
               break
@@ -122,18 +122,19 @@ jobs:
               echo "Instance refresh failed or was cancelled"
               exit 1
             fi
-            
+          
             echo "Instance refresh status: $STATUS"
             sleep 30
           done
 
       # Configure AWS credentials for Demo account
       - name: Configure AWS Demo credentials
-        uses: aws-actions/configure-aws-credentials@v3
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{secrets.AWS_ACCESS_KEY_ID_DEMO}}
-          aws-secret-access-key: ${{secrets.AWS_SECRET_ACCESS_KEY_DEMO}}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEMO }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEMO }}
           aws-region: us-east-1
+          role-duration-seconds: 3600
 
       # Update Launch Template for Demo Account
       - name: Update Launch Template Demo
@@ -143,7 +144,7 @@ jobs:
             --launch-template-id $TEMPLATE_ID \
             --version-description "Auto-created version with new AMI" \
             --source-version '$Latest' \
-            --launch-template-data "{\"ImageId\":\"${{steps.extract_ami.outputs.ami_id}}\"}"
+            --launch-template-data "{\"ImageId\":\"${{ steps.extract_ami.outputs.ami_id }}\"}"
           
           aws ec2 modify-launch-template \
             --launch-template-id $TEMPLATE_ID \
@@ -174,10 +175,10 @@ jobs:
               exit 1
             fi
             STATUS=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name ${{steps.refresh_demo.outputs.asg_name}} \
-              --instance-refresh-ids ${{steps.refresh_demo.outputs.refresh_id}} \
+              --auto-scaling-group-name ${{ steps.refresh_demo.outputs.asg_name }} \
+              --instance-refresh-ids ${{ steps.refresh_demo.outputs.refresh_id }} \
               --query 'InstanceRefreshes[0].Status' --output text)
-            
+          
             if [ "$STATUS" = "Successful" ]; then
               echo "Instance refresh completed successfully"
               break
@@ -185,7 +186,7 @@ jobs:
               echo "Instance refresh failed or was cancelled"
               exit 1
             fi
-            
+          
             echo "Instance refresh status: $STATUS"
             sleep 30
           done
